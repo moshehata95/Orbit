@@ -4,6 +4,9 @@ dist/
 Orbit.exe
 exe/*.exe
 exe/*.pdb
+exe/orbit.xaml
+exe/orbit-vnc.py
+exe/fonts/
 .build_*/
 
 # design/dev scratch
