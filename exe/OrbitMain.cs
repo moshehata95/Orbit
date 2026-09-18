@@ -1,0 +1,359 @@
+// Orbit — entry point, CLI, and GUI. Developed by Dr. Mohamed Shehata.
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Markup;
+using System.Windows.Media;
+using System.Windows.Shapes;
+using System.Windows.Threading;
+using System.Xml;
+using Path = System.IO.Path;
+
+namespace OrbitApp
+{
+    static class Program
+    {
+        [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
+
+        [STAThread]
+        static int Main(string[] args)
+        {
+            if (args.Length == 0) return Gui.Run();
+            if (args[0] == "--worker")
+            {
+                var d = ParseArgs(args);
+                return Worker.RunElevated(Get(d, "role"), Get(d, "code"), Get(d, "name"), Get(d, "progress"));
+            }
+            AttachConsole(-1);
+            return Cli.Run(args);
+        }
+
+        static Dictionary<string, string> ParseArgs(string[] args)
+        {
+            var d = new Dictionary<string, string>();
+            for (int i = 1; i < args.Length; i++)
+                if (args[i].StartsWith("--") && i + 1 < args.Length) { d[args[i].Substring(2)] = args[i + 1]; i++; }
+            return d;
+        }
+        static string Get(Dictionary<string, string> d, string k) { return d.ContainsKey(k) ? d[k] : ""; }
+    }
+
+    // ============================ CLI ============================
+    static class Cli
+    {
+        static void W(string s) { Console.Out.WriteLine(s); Console.Out.Flush(); }
+
+        public static int Run(string[] args)
+        {
+            var verb = args[0].ToLowerInvariant();
+            var rest = args.Skip(1).ToArray();
+            try
+            {
+                switch (verb)
+                {
+                    case "list": return List();
+                    case "status": return Status(Need(rest, 0));
+                    case "ssh": return Ssh(rest);
+                    case "shot": return Shot(rest);
+                    case "click": return Vnc(rest[0], new[] { "click", rest[1], rest[2], rest.Length > 3 ? rest[3] : "1" }, "clicked " + rest[1] + "," + rest[2]);
+                    case "move": return Vnc(rest[0], new[] { "move", rest[1], rest[2] }, "moved");
+                    case "dclick": return Vnc(rest[0], new[] { "dclick", rest[1], rest[2] }, "double-clicked");
+                    case "type": return Vnc(rest[0], new[] { "type" }.Concat(rest.Skip(1)).ToArray(), "typed");
+                    case "key": return Vnc(rest[0], new[] { "key" }.Concat(rest.Skip(1)).ToArray(), "sent keys");
+                    case "tunnel": return Tunnel(rest);
+                    case "scan": return Scan();
+                    default:
+                        W("Orbit CLI " + Core.Version + "\nCommands: list | status | ssh | shot | click | move | dclick | type | key | tunnel | scan");
+                        return 0;
+                }
+            }
+            catch (Exception ex) { W("error: " + ex.Message); return 1; }
+        }
+
+        static string Need(string[] r, int i) { if (i >= r.Length) throw new Exception("Specify a device name."); return r[i]; }
+        static Device Dev(string name)
+        {
+            var d = Core.GetDevice(name);
+            if (d == null) throw new Exception("No device named '" + name + "'. Try: orbit list");
+            return d;
+        }
+
+        static int List()
+        {
+            var devs = Core.GetDevices();
+            if (devs.Count == 0) { W("No paired devices. Open Orbit on the main computer and pair one."); return 0; }
+            foreach (var d in devs)
+            {
+                var ping = Core.DeviceSsh(d, "echo ok", 10000);
+                var st = ping.Out.Contains("ok") ? "online" : "unreachable";
+                W(string.Format("{0,-22} {1,-16} {2}  ({3}@{4}:{5}, vnc {6})", d.name, d.alias, st, d.user, d.ip, d.sshPort, d.vncPort));
+            }
+            return 0;
+        }
+        static int Status(string name)
+        {
+            var d = Dev(name);
+            var ping = Core.DeviceSsh(d, "echo ok", 10000);
+            W("SSH: " + ping.Out.Contains("ok"));
+            int rc; try { var o = Vnc(d, new[] { "probe" }, out rc); W("VNC: " + (rc == 0) + (o.Length > 0 ? " (" + o + ")" : "")); } catch (Exception ex) { W("VNC: False - " + ex.Message); }
+            return 0;
+        }
+        static int Ssh(string[] rest)
+        {
+            var d = Dev(rest[0]);
+            var cmd = string.Join(" ", rest.Skip(1));
+            if (cmd.Length == 0) throw new Exception("Type the command after the device name.");
+            var r = Core.DeviceSsh(d, cmd, 60000);
+            if (r.Out.Length > 0) W(r.Out.TrimEnd());
+            if (r.Err.Length > 0) W(r.Err.TrimEnd());
+            return r.Code;
+        }
+        static int Shot(string[] rest)
+        {
+            var d = Dev(rest[0]);
+            var outp = rest.Length > 1 ? rest[1] : Path.Combine(Path.GetTempPath(), "orbit-" + d.alias + "-" + DateTime.Now.ToString("HHmmss") + ".png");
+            int rc; var res = Vnc(d, new[] { "capture", outp }, out rc);
+            if (rc != 0) throw new Exception(res);
+            W(res); return 0;
+        }
+        static int Tunnel(string[] rest)
+        {
+            var d = Dev(rest[0]); int lp = int.Parse(rest[1]), rp = int.Parse(rest[2]);
+            W("Tunnel open: http://127.0.0.1:" + lp + "  ->  " + d.name + ":" + rp + "  (close this window to stop)");
+            var args = new[] { "-i", Core.KeyPath, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=NUL", "-o", "ExitOnForwardFailure=yes", "-N", "-p", d.sshPort.ToString(),
+                "-L", "127.0.0.1:" + lp + ":127.0.0.1:" + rp, "-l", d.user, d.ip };
+            var psi = new ProcessStartInfo { FileName = Core.SshExe, Arguments = string.Join(" ", args.Select(a => a.Contains(" ") ? "\"" + a + "\"" : a)), UseShellExecute = false };
+            using (var p = Process.Start(psi)) { p.WaitForExit(); return p.ExitCode; }
+        }
+        static int Scan()
+        {
+            var found = new List<Banner>();
+            foreach (var ip in Core.FindOpenSsh()) { var b = Core.ReadBanner(ip); if (b != null) found.Add(b); }
+            if (found.Count == 0) { W("No Orbit devices on the network."); return 0; }
+            foreach (var f in found) W(string.Format("{0,-18} {1,-10} {2}@{3}", f.Name, f.Role, f.User, f.IP));
+            return 0;
+        }
+
+        static int Vnc(string name, string[] vncArgs, string okMsg) { var d = Dev(name); int rc; Vnc(d, vncArgs, out rc); if (rc == 0 && okMsg != null) W(okMsg); return rc; }
+        static string Vnc(Device dev, string[] vncArgs, out int rc)
+        {
+            var code = Core.Unprotect(dev.code);
+            if (code == null) throw new Exception("Can't decrypt the code for '" + dev.name + "' (must be the same Windows account that paired it).");
+            var py = Core.PyExe(); if (py == null) throw new Exception("Python is not installed on the main computer - it is needed for the screen channel.");
+            var drv = Core.DriverPath;
+            if (!File.Exists(drv)) Core.ExtractResource("orbit-vnc.py", drv);
+            int lp; var t = Core.OpenTunnel(dev, out lp);
+            if (t == null) throw new Exception("Can't open an SSH tunnel to '" + dev.name + "' - make sure it is on and on the network.");
+            try
+            {
+                var server = "127.0.0.1::" + lp;
+                Environment.SetEnvironmentVariable("ORBIT_VNC_PW", code);
+                var argv = new List<string> { drv, vncArgs[0], server };
+                argv.AddRange(vncArgs.Skip(1));
+                var r = Core.Run(py, argv.ToArray(), 40000);
+                rc = r.Code;
+                if (r.Code != 0) throw new Exception("Screen channel failed: " + r.Err.Trim());
+                return r.Out.Trim();
+            }
+            finally { Environment.SetEnvironmentVariable("ORBIT_VNC_PW", null); try { if (!t.HasExited) t.Kill(); } catch { } }
+        }
+    }
+
+    // ============================ GUI ============================
+    static class Gui
+    {
+        static Window win;
+        static string curCode;
+        static List<Banner> banners = new List<Banner>();
+
+        public static int Run()
+        {
+            var app = new Application();
+            win = (Window)XamlReader.Load(XmlReader.Create(new StringReader(Core.ReadTextResource("orbit.xaml"))));
+            try { var fd = Core.ExtractFonts(); win.FontFamily = new FontFamily(new Uri(fd.TrimEnd('\\') + "\\"), "./#Cairo"); } catch { }
+
+            Wire<Button>("btnPrimary", b => b.Click += (s, e) => StartPrimary());
+            Wire<Button>("btnSecondary", b => b.Click += (s, e) => StartSecondary());
+            Wire<Button>("btnBack", b => b.Click += (s, e) => Show("role"));
+            Wire<Button>("btnClose", b => b.Click += (s, e) => win.Close());
+            Wire<Button>("btnCopyCode", b => b.Click += (s, e) => { try { if (curCode != null) Clipboard.SetText(curCode); } catch { } });
+            Wire<Button>("btnConnect", b => b.Click += (s, e) => DoConnect());
+            Wire<ComboBox>("cmbDevices", c => c.SelectionChanged += (s, e) => UpdateCard());
+            var rm = win.FindName("lnkRemove") as System.Windows.Controls.TextBlock;
+            if (rm != null) rm.MouseLeftButtonUp += (s, e) => RemoveThis();
+
+            win.MouseLeftButtonDown += (s, e) => { if (e.ButtonState == MouseButtonState.Pressed) { try { win.DragMove(); } catch { } } };
+            win.SourceInitialized += (s, e) => { try { Native.Glass(new WindowInteropHelper(win).Handle); } catch { } };
+            Show("role");
+            app.Run(win);
+            return 0;
+        }
+
+        static void Wire<T>(string name, Action<T> act) where T : class { var o = win.FindName(name) as T; if (o != null) act(o); }
+        static T F<T>(string name) where T : class { return win.FindName(name) as T; }
+        static void SetText(string name, string text) { var t = win.FindName(name) as System.Windows.Controls.TextBlock; if (t != null) t.Text = text; }
+
+        static void Show(string screen)
+        {
+            foreach (var s in new[] { "scRole", "scSecondary", "scPrimary" }) { var p = win.FindName(s) as UIElement; if (p != null) p.Visibility = Visibility.Collapsed; }
+            var back = win.FindName("btnBack") as UIElement; if (back != null) back.Visibility = screen == "role" ? Visibility.Collapsed : Visibility.Visible;
+            var cur = win.FindName(screen == "role" ? "scRole" : screen == "secondary" ? "scSecondary" : "scPrimary") as UIElement;
+            if (cur != null) cur.Visibility = Visibility.Visible;
+        }
+
+        // ---- secondary ----
+        static void StartSecondary()
+        {
+            curCode = Core.NewCode();
+            SetText("lblCode", Core.FormatCode(curCode));
+            SetText("lblSecStatus", "Starting setup...");
+            Show("secondary");
+            var nameBox = F<TextBox>("txtName");
+            var name = nameBox != null && nameBox.Text.Length > 0 ? nameBox.Text : Environment.MachineName;
+            var prog = Path.Combine(Path.GetTempPath(), "orbit-setup-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".log");
+            File.WriteAllText(prog, "");
+            var exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            var psi = new ProcessStartInfo
+            {
+                FileName = exe,
+                Arguments = "--worker --role secondary --code " + curCode + " --name \"" + name + "\" --progress \"" + prog + "\"",
+                UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden
+            };
+            Process proc = null;
+            try { proc = Process.Start(psi); }
+            catch { SetText("lblSecStatus", "You must click Yes on the security prompt."); return; }
+            WatchProgress(prog, proc);
+        }
+
+        static void WatchProgress(string file, Process proc)
+        {
+            int pos = 0;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            timer.Tick += (s, e) =>
+            {
+                try
+                {
+                    if (File.Exists(file))
+                    {
+                        var lines = File.ReadAllLines(file);
+                        for (; pos < lines.Length; pos++)
+                        {
+                            var line = lines[pos];
+                            if (line.StartsWith("STATUS ")) SetText("lblSecStatus", line.Substring(7));
+                            else if (line.StartsWith("READY")) { SetText("lblSecStatus", "Ready - waiting for the main computer"); timer.Stop(); }
+                            else if (line.StartsWith("FAIL ")) { SetText("lblSecStatus", "⚠ " + line.Substring(5)); timer.Stop(); }
+                        }
+                    }
+                    if (proc != null && proc.HasExited && pos == 0) { SetText("lblSecStatus", "⚠ Setup did not start (was the prompt approved?)"); timer.Stop(); }
+                }
+                catch { }
+            };
+            timer.Start();
+        }
+
+        // ---- primary ----
+        static void StartPrimary()
+        {
+            Show("primary");
+            SetText("lblFound", "Setting up this computer...");
+            var cmb = F<ComboBox>("cmbDevices"); if (cmb != null) cmb.Items.Clear();
+            Task.Run(() =>
+            {
+                try { Core.InstallSelf(); } catch { }
+                try { Core.EnsureVncdotool(); } catch { }
+                var found = new List<Banner>();
+                foreach (var ip in Core.FindOpenSsh()) { var b = Core.ReadBanner(ip); if (b != null && b.Role == "secondary") found.Add(b); }
+                win.Dispatcher.Invoke(() => FillDevices(found));
+            });
+        }
+
+        static void FillDevices(List<Banner> found)
+        {
+            banners = found;
+            var cmb = F<ComboBox>("cmbDevices"); cmb.Items.Clear();
+            if (found.Count == 0) { SetText("lblFound", "No other computers found on the network"); return; }
+            SetText("lblFound", "Found " + found.Count + " computer(s) on the network");
+            foreach (var b in found)
+            {
+                bool paired = Core.GetDevice(b.Name) != null;
+                var it = new ComboBoxItem { Tag = b };
+                var sp = new StackPanel { Orientation = Orientation.Horizontal };
+                var col = paired ? Color.FromRgb(0x22, 0xD3, 0xB0) : Color.FromRgb(0xF0, 0xB0, 0x3C);
+                sp.Children.Add(new Ellipse { Width = 9, Height = 9, VerticalAlignment = VerticalAlignment.Center, Fill = new SolidColorBrush(col) });
+                sp.Children.Add(new TextBlock { Text = b.Name, Margin = new Thickness(10, 0, 0, 0), FontSize = 15 });
+                sp.Children.Add(new TextBlock { Text = paired ? "Connected" : "Needs code", FontSize = 11.5, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(col) });
+                it.Content = sp; cmb.Items.Add(it);
+            }
+            cmb.SelectedIndex = 0; UpdateCard();
+        }
+
+        static void UpdateCard()
+        {
+            var cmb = F<ComboBox>("cmbDevices"); if (cmb == null || cmb.SelectedItem == null) return;
+            var b = (Banner)((ComboBoxItem)cmb.SelectedItem).Tag;
+            bool paired = Core.GetDevice(b.Name) != null;
+            var conn = win.FindName("stConnected") as UIElement; var need = win.FindName("stNeedCode") as UIElement;
+            if (conn != null) conn.Visibility = paired ? Visibility.Visible : Visibility.Collapsed;
+            if (need != null) need.Visibility = paired ? Visibility.Collapsed : Visibility.Visible;
+            if (paired) SetText("lblConnName", b.Name);
+            else { var tc = F<TextBox>("txtCode"); if (tc != null) tc.Text = ""; }
+        }
+
+        static void DoConnect()
+        {
+            var cmb = F<ComboBox>("cmbDevices"); if (cmb == null || cmb.SelectedItem == null) return;
+            var b = (Banner)((ComboBoxItem)cmb.SelectedItem).Tag;
+            var tc = F<TextBox>("txtCode");
+            var code = new string((tc != null ? tc.Text : "").Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+            if (code.Length != 8) { SetText("lblConnErr", "The code is 8 letters/digits."); return; }
+            SetText("lblConnErr", "Connecting...");
+            Task.Run(() =>
+            {
+                string err = null;
+                try { Pair(b, code); } catch (Exception ex) { err = ex.Message; }
+                win.Dispatcher.Invoke(() => { if (err == null) { SetText("lblConnErr", ""); UpdateCard(); } else SetText("lblConnErr", "⚠ " + err); });
+            });
+        }
+
+        static void Pair(Banner b, string code)
+        {
+            var dev = new Device { name = b.Name, alias = "orbit-" + b.Name.Replace(" ", "-"), ip = b.IP, user = b.User, sshPort = b.SshPort, vncPort = b.VncPort, code = Core.Protect(code) };
+            var ping = Core.DeviceSsh(dev, "echo ok", 12000);
+            if (!ping.Out.Contains("ok")) throw new Exception("Can't log in with the key - make sure it was set up as the other computer.");
+            int lp; var t = Core.OpenTunnel(dev, out lp); if (t == null) throw new Exception("Could not open the screen tunnel.");
+            try
+            {
+                var py = Core.PyExe(); var drv = Core.DriverPath; if (!File.Exists(drv)) Core.ExtractResource("orbit-vnc.py", drv);
+                Environment.SetEnvironmentVariable("ORBIT_VNC_PW", code);
+                var r = Core.Run(py, new[] { drv, "probe", "127.0.0.1::" + lp }, 25000);
+                if (r.Code != 0) throw new Exception("Wrong code, or the screen channel is not running: " + r.Err.Trim());
+            }
+            finally { Environment.SetEnvironmentVariable("ORBIT_VNC_PW", null); try { if (!t.HasExited) t.Kill(); } catch { } }
+            Core.SetDevice(dev);
+        }
+
+        static void RemoveThis()
+        {
+            var res = MessageBox.Show("Remove remote control from this computer (key, service, firewall)?", "Orbit", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (res != MessageBoxResult.Yes) return;
+            Show("secondary"); SetText("lblCode", "· · · ·"); SetText("lblSecStatus", "Removing...");
+            var prog = Path.Combine(Path.GetTempPath(), "orbit-remove-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".log");
+            File.WriteAllText(prog, "");
+            var exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            var psi = new ProcessStartInfo { FileName = exe, Arguments = "--worker --role remove --progress \"" + prog + "\"", UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
+            Process proc = null;
+            try { proc = Process.Start(psi); } catch { SetText("lblSecStatus", "You must click Yes on the security prompt."); return; }
+            WatchProgress(prog, proc);
+        }
+    }
+}

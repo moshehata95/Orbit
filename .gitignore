@@ -1,6 +1,10 @@
 # build output
 dist/
 *.zip
+Orbit.exe
+exe/*.exe
+exe/*.pdb
+.build_*/
 
 # design/dev scratch
 ui/

@@ -86,16 +86,16 @@ Orbit is personalized to *your* primary machine's key. On the primary:
 ```powershell
 # one-time: create your key (press Enter twice for NO passphrase — required), then build
 ssh-keygen -t ed25519 -C orbit-primary -f "$env:USERPROFILE\.ssh\orbit_primary"
-powershell -ExecutionPolicy Bypass -File .\build.ps1
+powershell -ExecutionPolicy Bypass -File .\build-exe.ps1
 ```
 
-This produces `Orbit.zip` (a plain folder — see [Antivirus](#antivirus-note)) carrying the scripts, the Cairo font, and *your* public key.
+This compiles **`Orbit.exe`** — a single, self-contained executable, with the XAML, the Cairo font, the screen driver, and *your* public key all embedded (built with the .NET Framework compiler already on Windows; no SDK). A PowerShell edition (`build.ps1` → `Orbit.zip`) is also available.
 
-### 2 · Set up each secondary
-Copy the `Orbit` folder to the machine → run **`Run Orbit.cmd`** → **Secondary** → approve the UAC prompt. It installs the SSH + screen channels and shows an 8-character **code**. *(The machine needs internet once, for the OpenSSH/VNC download.)*
+### 2 · Set up each other computer
+Copy **`Orbit.exe`** to the machine → run it → **The other computer** → approve the UAC prompt. It installs the SSH + screen channels and shows an 8-character **code**. *(The machine needs internet once, for the OpenSSH/VNC download.)*
 
-### 3 · Pair from the primary
-Run **`Run Orbit.cmd`** → **Primary** → pick the device from the list → type its code → **Connected ✓**.
+### 3 · Pair from the main computer
+Run **`Orbit.exe`** → **Main computer** → pick the device from the list → type its code → **Connected ✓**.
 
 ---
 
@@ -119,11 +119,13 @@ This is what makes Orbit useful for **automated testing and remote support**: a 
 
 ## Antivirus note
 
-Orbit ships as a **plain folder / zip**, not a single self-extracting `.cmd`. That's deliberate: antivirus engines (Kaspersky included) flag any `.cmd` that carries encoded/compressed PowerShell as a dropper and quarantine it on sight. The readable-script folder runs cleanly.
+Orbit does real remote control — it installs an SSH server, installs a VNC screen server (TightVNC), and scans the LAN. That behaviour is the fingerprint of a remote-access tool, so aggressive antivirus (Kaspersky, in testing) may **quarantine `Orbit.exe` on sight**, the same way it treats other unsigned remote tools. Expected, not a defect.
 
-On a **secondary**, the screen server (TightVNC) is correctly recognized as a remote-access tool — **allow it** in your AV so the screen channel works. If it's blocked, the SSH command channel still works; only live screen/click does not.
+To use it, **trust Orbit in your antivirus**:
+- **Main computer:** add the Orbit folder and `%LOCALAPPDATA%\Orbit` to your AV's exclusions, and add `Orbit.exe` as a trusted application ("do not monitor activity").
+- **Other computers:** pause protection during setup, or allow the screen server (TightVNC) when prompted.
 
-**Downloaded copy won't open?** Windows tags files from the internet ("Mark-of-the-Web"), which silently blocks the scripts. `Run Orbit.cmd` unblocks the folder automatically before launching. If it still won't open, right-click `Orbit.zip` → **Properties** → **Unblock** → OK, then extract again.
+If the screen channel is blocked but SSH is allowed, the command channel still works — only live screen/click is lost. Windows may also show SmartScreen for the unsigned exe: choose **More info → Run anyway**.
 
 ---
 
@@ -136,13 +138,13 @@ On a **secondary**, the screen server (TightVNC) is correctly recognized as a re
 
 ## Uninstall
 
-Open **`Run Orbit.cmd`** on any machine → **Remove** → it restores the machine (keys, services, firewall rule) to its prior state.
+Open **`Orbit.exe`** on any machine → **Remove remote control** → it restores the machine (keys, services, firewall rule) to its prior state.
 
 ---
 
 ## Built with
 
-- **WPF** (PowerShell-hosted) with DWM acrylic — the liquid-glass UI, zero install
+- **C# / WPF** compiled with the built-in .NET Framework compiler (no SDK), DWM acrylic — the liquid-glass UI in one self-contained exe
 - **[Cairo](https://github.com/google/fonts/tree/main/ofl/cairo)** typeface — SIL OFL 1.1 (bundled, see `fonts/OFL.txt`)
 - **OpenSSH** — command channel & tunnel · **TightVNC** — screen server · **[vncdotool](https://github.com/sibson/vncdotool)** — screen actuator
 
