@@ -108,6 +108,32 @@
       <Setter Property="Padding" Value="15,13"/><Setter Property="Margin" Value="0,0,0,9"/><Setter Property="Cursor" Value="Hand"/>
       <Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#22FFFFFF"/></Trigger></Style.Triggers>
     </Style>
+    <Style x:Key="TitleBtn" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand"/><Setter Property="Foreground" Value="#99FFFFFF"/>
+      <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/><Setter Property="FontSize" Value="13"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="b" CornerRadius="8" Background="Transparent"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="#26FFFFFF"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger>
+            <Trigger Property="IsPressed" Value="True"><Setter TargetName="b" Property="Background" Value="#18FFFFFF"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <Style x:Key="IconButton" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand"/><Setter Property="Foreground" Value="#B9C4D6"/>
+      <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="b" CornerRadius="10" Background="#14FFFFFF" BorderBrush="#26FFFFFF" BorderThickness="1"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="#2A6EA8FF"/><Setter TargetName="b" Property="BorderBrush" Value="#6EA8FF"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger>
+            <Trigger Property="IsPressed" Value="True"><Setter TargetName="b" Property="Background" Value="#1E6EA8FF"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
   </Window.Resources>
 
   <Grid>
@@ -115,9 +141,9 @@
     <Border IsHitTestVisible="False"><Border.Background><RadialGradientBrush GradientOrigin="0.15,0.0" Center="0.15,0.0" RadiusX="1.1" RadiusY="0.9"><GradientStop Color="#553B82F6" Offset="0"/><GradientStop Color="#00121620" Offset="1"/></RadialGradientBrush></Border.Background></Border>
     <Border IsHitTestVisible="False"><Border.Background><RadialGradientBrush GradientOrigin="0.95,1.0" Center="0.95,1.0" RadiusX="1.0" RadiusY="0.9"><GradientStop Color="#4022D3B0" Offset="0"/><GradientStop Color="#00121620" Offset="1"/></RadialGradientBrush></Border.Background></Border>
 
-    <Button x:Name="btnMinimize" Width="34" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,52,0" Background="Transparent" BorderThickness="0" Foreground="#99FFFFFF" Cursor="Hand" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Content="&#xE921;"/>
-    <Button x:Name="btnClose" Width="34" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="Transparent" BorderThickness="0" Foreground="#99FFFFFF" Cursor="Hand" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Content="&#xE711;"/>
-    <Button x:Name="btnBack" Width="34" Height="34" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Visibility="Collapsed" Background="Transparent" BorderThickness="0" Foreground="#99FFFFFF" Cursor="Hand" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Content="&#xE72B;"/>
+    <Button x:Name="btnMinimize" Style="{StaticResource TitleBtn}" Width="34" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,52,0" Content="&#xE921;"/>
+    <Button x:Name="btnClose" Style="{StaticResource TitleBtn}" Width="34" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Content="&#xE711;"/>
+    <Button x:Name="btnBack" Style="{StaticResource TitleBtn}" Width="34" Height="34" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Visibility="Collapsed" FontSize="14" Content="&#xE72B;"/>
 
     <Grid Margin="30,20,30,24">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -187,7 +213,7 @@
         <StackPanel x:Name="scPrimary" VerticalAlignment="Top" Visibility="Collapsed">
           <Grid Margin="0,0,0,12">
             <TextBlock x:Name="lblFound" Text="Choose a computer" Foreground="#E9EEF6" FontSize="15.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
-            <Button x:Name="btnRescan" HorizontalAlignment="Right" VerticalAlignment="Center" Width="34" Height="34" Background="#16FFFFFF" BorderThickness="0" Foreground="#B9C4D6" Cursor="Hand" ToolTip="Search again" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Content="&#xE72C;"/>
+            <Button x:Name="btnRescan" Style="{StaticResource IconButton}" HorizontalAlignment="Right" VerticalAlignment="Center" Width="34" Height="34" ToolTip="Search again" FontSize="14" Content="&#xE72C;"/>
           </Grid>
 
           <StackPanel x:Name="spSearch" Margin="0,22,0,22">
