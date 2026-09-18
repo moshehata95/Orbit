@@ -7,6 +7,7 @@ exe/*.pdb
 exe/orbit.xaml
 exe/orbit-vnc.py
 exe/fonts/
+exe/bundle/
 .build_*/
 
 # design/dev scratch

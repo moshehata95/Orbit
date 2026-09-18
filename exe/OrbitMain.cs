@@ -189,6 +189,9 @@ namespace OrbitApp
             Wire<Button>("btnCopyCode", b => b.Click += (s, e) => { try { if (curCode != null) Clipboard.SetText(curCode); } catch { } });
             Wire<Button>("btnConnect", b => b.Click += (s, e) => DoConnect());
             Wire<ComboBox>("cmbDevices", c => c.SelectionChanged += (s, e) => UpdateCard());
+            Wire<Button>("btnManualConnect", b => b.Click += (s, e) => DoConnectManual());
+            var lm = win.FindName("lnkManual") as System.Windows.Controls.TextBlock;
+            if (lm != null) lm.MouseLeftButtonUp += (s, e) => { var pm = win.FindName("pnlManual") as UIElement; if (pm != null) pm.Visibility = pm.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible; };
             var rm = win.FindName("lnkRemove") as System.Windows.Controls.TextBlock;
             if (rm != null) rm.MouseLeftButtonUp += (s, e) => RemoveThis();
 
@@ -325,18 +328,63 @@ namespace OrbitApp
             });
         }
 
+        // Connect straight to a typed address - for links (direct Ethernet, 169.254.x) or any
+        // network where auto-discovery can't see the other computer. Reads its banner over SSH,
+        // then pairs exactly like a discovered device.
+        static void DoConnectManual()
+        {
+            var ipBox = F<TextBox>("txtManualIp"); var codeBox = F<TextBox>("txtManualCode");
+            var ip = (ipBox != null ? ipBox.Text : "").Trim();
+            var code = new string((codeBox != null ? codeBox.Text : "").Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+            if (ip.Length == 0) { SetText("lblManualErr", "Type the other computer's address."); return; }
+            if (code.Length != 8) { SetText("lblManualErr", "The code is 8 letters/digits."); return; }
+            SetText("lblManualErr", "Connecting...");
+            Task.Run(() =>
+            {
+                string err = null; Banner b = null;
+                try
+                {
+                    b = Core.ReadBanner(ip);
+                    if (b == null) throw new Exception("No Orbit computer answered at " + ip + " - check the address and that it shows Ready.");
+                    if (b.Role != "secondary") throw new Exception("That address isn't set up as the other computer.");
+                    Pair(b, code);
+                }
+                catch (Exception ex) { err = ex.Message; }
+                win.Dispatcher.Invoke(() =>
+                {
+                    if (err != null) { SetText("lblManualErr", "⚠ " + err); return; }
+                    SetText("lblManualErr", "");
+                    var found = new List<Banner>(banners);
+                    if (!found.Any(x => x.IP == b.IP)) found.Add(b);
+                    FillDevices(found);
+                    var cmb = F<ComboBox>("cmbDevices");
+                    if (cmb != null) for (int i = 0; i < cmb.Items.Count; i++) { var it = cmb.Items[i] as ComboBoxItem; if (it != null && ((Banner)it.Tag).IP == b.IP) { cmb.SelectedIndex = i; break; } }
+                    UpdateCard();
+                    var pm = win.FindName("pnlManual") as UIElement; if (pm != null) pm.Visibility = Visibility.Collapsed;
+                });
+            });
+        }
+
         static void Pair(Banner b, string code)
         {
             var dev = new Device { name = b.Name, alias = "orbit-" + b.Name.Replace(" ", "-"), ip = b.IP, user = b.User, sshPort = b.SshPort, vncPort = b.VncPort, code = Core.Protect(code) };
-            var ping = Core.DeviceSsh(dev, "echo ok", 12000);
-            if (!ping.Out.Contains("ok")) throw new Exception("Can't log in with the key - make sure it was set up as the other computer.");
-            int lp; var t = Core.OpenTunnel(dev, out lp); if (t == null) throw new Exception("Could not open the screen tunnel.");
+            RunResult ping = null;
+            for (int i = 0; i < 3; i++)
+            {
+                ping = Core.DeviceSsh(dev, "echo ok", 12000);
+                if (ping.Out.Contains("ok")) break;
+                System.Threading.Thread.Sleep(900);
+            }
+            if (ping == null || !ping.Out.Contains("ok")) throw new Exception("Can't reach it over the command channel - make sure it is on and set up as the other computer.");
+            int lp; var t = Core.OpenTunnel(dev, out lp); if (t == null) throw new Exception("Command channel works, but the screen tunnel would not open.");
             try
             {
-                var py = Core.PyExe(); var drv = Core.DriverPath; if (!File.Exists(drv)) Core.ExtractResource("orbit-vnc.py", drv);
+                var py = Core.PyExe(); if (py == null) throw new Exception("Python is missing on this computer (needed for the screen channel).");
+                var drv = Core.DriverPath; if (!File.Exists(drv)) Core.ExtractResource("orbit-vnc.py", drv);
                 Environment.SetEnvironmentVariable("ORBIT_VNC_PW", code);
-                var r = Core.Run(py, new[] { drv, "probe", "127.0.0.1::" + lp }, 25000);
-                if (r.Code != 0) throw new Exception("Wrong code, or the screen channel is not running: " + r.Err.Trim());
+                var r = Core.Run(py, new[] { drv, "probe", "127.0.0.1::" + lp }, 15000);
+                if (r.Code == 5) throw new Exception("That code doesn't match. Re-check the 8 characters shown on the other computer.");
+                if (r.Code != 0) throw new Exception("Couldn't verify the screen channel. " + r.Err.Trim());
             }
             finally { Environment.SetEnvironmentVariable("ORBIT_VNC_PW", null); try { if (!t.HasExited) t.Kill(); } catch { } }
             Core.SetDevice(dev);

@@ -19,15 +19,20 @@ try {
     Copy-Item "$root\exe\Orbit.cs","$root\exe\OrbitWorker.cs","$root\exe\OrbitMain.cs" $stage -Force
     Copy-Item "$root\orbit.xaml","$root\orbit-vnc.py" $stage -Force
     foreach ($w in 400,600,700) { Copy-Item "$root\fonts\Cairo-$w.ttf" $stage -Force }
+    # offline server bundle (so setup needs no internet)
+    if (-not (Test-Path "$root\exe\bundle\openssh.zip")) { throw "Missing exe\bundle\openssh.zip (Win32-OpenSSH portable)" }
+    if (-not (Test-Path "$root\exe\bundle\tvnc.msi"))   { throw "Missing exe\bundle\tvnc.msi (TightVNC installer)" }
+    Copy-Item "$root\exe\bundle\openssh.zip","$root\exe\bundle\tvnc.msi" $stage -Force
     # inject key
     $oc = [IO.File]::ReadAllText((Join-Path $stage 'Orbit.cs'), [Text.Encoding]::UTF8).Replace('__PUBKEY__', $pub)
     if ($oc -match '__PUBKEY__') { throw 'Key injection failed' }
     [IO.File]::WriteAllText((Join-Path $stage 'Orbit.cs'), $oc, (New-Object Text.UTF8Encoding $false))
 
     $refs = 'PresentationFramework','PresentationCore','WindowsBase' | ForEach-Object { "/reference:$fw\WPF\$_.dll" }
-    $refs += 'System.Xaml','System','System.Core','System.Xml','System.Web.Extensions','System.ServiceProcess','System.Security' | ForEach-Object { "/reference:$fw\$_.dll" }
+    $refs += 'System.Xaml','System','System.Core','System.Xml','System.Web.Extensions','System.ServiceProcess','System.Security','System.IO.Compression','System.IO.Compression.FileSystem' | ForEach-Object { "/reference:$fw\$_.dll" }
     $res = @('/resource:orbit.xaml,Orbit.orbit.xaml','/resource:orbit-vnc.py,Orbit.orbit-vnc.py',
-             '/resource:Cairo-400.ttf,Orbit.Cairo-400.ttf','/resource:Cairo-600.ttf,Orbit.Cairo-600.ttf','/resource:Cairo-700.ttf,Orbit.Cairo-700.ttf')
+             '/resource:Cairo-400.ttf,Orbit.Cairo-400.ttf','/resource:Cairo-600.ttf,Orbit.Cairo-600.ttf','/resource:Cairo-700.ttf,Orbit.Cairo-700.ttf',
+             '/resource:openssh.zip,Orbit.openssh.zip','/resource:tvnc.msi,Orbit.tvnc.msi')
     Push-Location $stage
     $o = & $csc /nologo /target:winexe /out:Orbit.exe @refs @res Orbit.cs OrbitWorker.cs OrbitMain.cs 2>&1
     Pop-Location

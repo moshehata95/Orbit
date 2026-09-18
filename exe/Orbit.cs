@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.IO.Compression;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -321,6 +322,22 @@ namespace OrbitApp
             EnsureDir(Path.GetDirectoryName(dest));
             using (var s = asm.GetManifestResourceStream("Orbit." + name))
             using (var f = File.Create(dest)) s.CopyTo(f);
+        }
+        // extract an embedded .zip resource into destDir (overwriting), for the offline SSH server bundle
+        public static void ExtractZipResource(string name, string destDir)
+        {
+            EnsureDir(destDir);
+            var tmp = Path.Combine(Path.GetTempPath(), "orbit-" + name);
+            ExtractResource(name, tmp);
+            using (var za = System.IO.Compression.ZipFile.OpenRead(tmp))
+                foreach (var e in za.Entries)
+                {
+                    var target = Path.Combine(destDir, e.FullName.Replace('/', '\\'));
+                    if (e.Name.Length == 0) { EnsureDir(target); continue; }
+                    EnsureDir(Path.GetDirectoryName(target));
+                    e.ExtractToFile(target, true);
+                }
+            try { File.Delete(tmp); } catch { }
         }
         public static string ExtractFonts()
         {
