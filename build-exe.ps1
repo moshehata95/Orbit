@@ -17,7 +17,7 @@ $stage = Join-Path $root ('.build_' + [guid]::NewGuid().ToString('N').Substring(
 New-Item -ItemType Directory -Force $stage | Out-Null
 try {
     Copy-Item "$root\exe\Orbit.cs","$root\exe\OrbitWorker.cs","$root\exe\OrbitMain.cs" $stage -Force
-    Copy-Item "$root\orbit.xaml","$root\orbit-vnc.py" $stage -Force
+    Copy-Item "$root\orbit.xaml","$root\orbit-vnc.py","$root\orbit.ico" $stage -Force
     foreach ($w in 400,600,700) { Copy-Item "$root\fonts\Cairo-$w.ttf" $stage -Force }
     # offline server bundle (so setup needs no internet)
     if (-not (Test-Path "$root\exe\bundle\openssh.zip")) { throw "Missing exe\bundle\openssh.zip (Win32-OpenSSH portable)" }
@@ -30,11 +30,11 @@ try {
 
     $refs = 'PresentationFramework','PresentationCore','WindowsBase' | ForEach-Object { "/reference:$fw\WPF\$_.dll" }
     $refs += 'System.Xaml','System','System.Core','System.Xml','System.Web.Extensions','System.ServiceProcess','System.Security','System.IO.Compression','System.IO.Compression.FileSystem' | ForEach-Object { "/reference:$fw\$_.dll" }
-    $res = @('/resource:orbit.xaml,Orbit.orbit.xaml','/resource:orbit-vnc.py,Orbit.orbit-vnc.py',
+    $res = @('/resource:orbit.xaml,Orbit.orbit.xaml','/resource:orbit-vnc.py,Orbit.orbit-vnc.py','/resource:orbit.ico,Orbit.orbit.ico',
              '/resource:Cairo-400.ttf,Orbit.Cairo-400.ttf','/resource:Cairo-600.ttf,Orbit.Cairo-600.ttf','/resource:Cairo-700.ttf,Orbit.Cairo-700.ttf',
              '/resource:openssh.zip,Orbit.openssh.zip','/resource:tvnc.msi,Orbit.tvnc.msi')
     Push-Location $stage
-    $o = & $csc /nologo /target:winexe /out:Orbit.exe @refs @res Orbit.cs OrbitWorker.cs OrbitMain.cs 2>&1
+    $o = & $csc /nologo /target:winexe /win32icon:orbit.ico /out:Orbit.exe @refs @res Orbit.cs OrbitWorker.cs OrbitMain.cs 2>&1
     Pop-Location
     if ($o | Where-Object { $_ -match 'error CS' }) { $o | Where-Object { $_ -match 'error CS' } | Select-Object -First 20; throw 'compile failed' }
     Copy-Item (Join-Path $stage 'Orbit.exe') (Join-Path $root 'Orbit.exe') -Force

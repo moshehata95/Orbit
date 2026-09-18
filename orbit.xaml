@@ -102,6 +102,12 @@
         <ControlTemplate TargetType="TextBox"><Border CornerRadius="12" Background="#18FFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" Padding="14,12"><ScrollViewer x:Name="PART_ContentHost"/></Border></ControlTemplate>
       </Setter.Value></Setter>
     </Style>
+    <Style x:Key="DeviceCard" TargetType="Border">
+      <Setter Property="CornerRadius" Value="14"/><Setter Property="Background" Value="#14FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#26FFFFFF"/><Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="15,13"/><Setter Property="Margin" Value="0,0,0,9"/><Setter Property="Cursor" Value="Hand"/>
+      <Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#22FFFFFF"/></Trigger></Style.Triggers>
+    </Style>
   </Window.Resources>
 
   <Grid>
@@ -109,6 +115,7 @@
     <Border IsHitTestVisible="False"><Border.Background><RadialGradientBrush GradientOrigin="0.15,0.0" Center="0.15,0.0" RadiusX="1.1" RadiusY="0.9"><GradientStop Color="#553B82F6" Offset="0"/><GradientStop Color="#00121620" Offset="1"/></RadialGradientBrush></Border.Background></Border>
     <Border IsHitTestVisible="False"><Border.Background><RadialGradientBrush GradientOrigin="0.95,1.0" Center="0.95,1.0" RadiusX="1.0" RadiusY="0.9"><GradientStop Color="#4022D3B0" Offset="0"/><GradientStop Color="#00121620" Offset="1"/></RadialGradientBrush></Border.Background></Border>
 
+    <Button x:Name="btnMinimize" Width="34" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,52,0" Background="Transparent" BorderThickness="0" Foreground="#99FFFFFF" Cursor="Hand" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Content="&#xE921;"/>
     <Button x:Name="btnClose" Width="34" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="Transparent" BorderThickness="0" Foreground="#99FFFFFF" Cursor="Hand" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Content="&#xE711;"/>
     <Button x:Name="btnBack" Width="34" Height="34" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Visibility="Collapsed" Background="Transparent" BorderThickness="0" Foreground="#99FFFFFF" Cursor="Hand" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Content="&#xE72B;"/>
 
@@ -146,30 +153,70 @@
           </Button>
         </StackPanel>
 
-        <!-- Secondary: the code -->
+        <!-- Secondary: name step, then the code -->
         <StackPanel x:Name="scSecondary" VerticalAlignment="Center" Visibility="Collapsed">
-          <Border CornerRadius="10" Background="#1A22D3B0" HorizontalAlignment="Center" Padding="12,5" Margin="0,0,0,14">
-            <StackPanel Orientation="Horizontal"><Ellipse Width="8" Height="8" Fill="#22D3B0" VerticalAlignment="Center"/><TextBlock x:Name="lblSecStatus" Text="Ready — waiting for the main computer" Foreground="#8FE9D6" FontSize="12.5" Margin="8,0,0,0"/></StackPanel>
-          </Border>
-          <TextBlock Text="Enter this code on the main computer" Foreground="#B9C4D6" FontSize="13" HorizontalAlignment="Center" Margin="0,0,0,10"/>
-          <Border CornerRadius="18" Background="{StaticResource GlassFill}" BorderBrush="{StaticResource GlassStroke}" BorderThickness="1" Padding="10,18" Margin="0,0,0,8"><Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="5" Direction="270" Opacity="0.4" Color="#000000"/></Border.Effect>
-            <TextBlock x:Name="lblCode" Text="----·----" Foreground="White" FontSize="40" FontWeight="Bold" FontFamily="Segoe UI" HorizontalAlignment="Center"><TextBlock.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="0" Opacity="0.5" Color="#6EA8FF"/></TextBlock.Effect></TextBlock>
-          </Border>
-          <Button x:Name="btnCopyCode" Style="{StaticResource Ghost}" HorizontalAlignment="Center" Margin="0,6,0,20">
-            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8C8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" VerticalAlignment="Center"/><TextBlock Text="Copy code" Margin="8,0,0,0" VerticalAlignment="Center"/></StackPanel>
-          </Button>
-          <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Name:" Foreground="#7C8AA3" FontSize="12.5" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <TextBox Grid.Column="1" x:Name="txtName" Style="{StaticResource Field}" FontSize="13"/>
-          </Grid>
+          <!-- step 1: name this computer -->
+          <StackPanel x:Name="pnlName">
+            <Border Width="60" Height="60" CornerRadius="18" HorizontalAlignment="Center" Margin="0,0,0,16">
+              <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#14B8A6" Offset="0"/><GradientStop Color="#22D3B0" Offset="1"/></LinearGradientBrush></Border.Background>
+              <TextBlock Text="&#xE7F4;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="27" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <TextBlock Text="Set up this computer" Foreground="White" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+            <TextBlock Text="Give it a name so you can recognize it on the main computer." Foreground="#8595AD" FontSize="12.5" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="0,4,0,20" MaxWidth="300"/>
+            <TextBlock Text="Computer name" Foreground="#9FB0C6" FontSize="12" Margin="2,0,0,6"/>
+            <TextBox x:Name="txtName" Style="{StaticResource Field}" FontSize="15" Margin="0,0,0,16"/>
+            <Button x:Name="btnSetup" Style="{StaticResource Pill}" Content="Set up this computer"/>
+          </StackPanel>
+          <!-- step 2: the code -->
+          <StackPanel x:Name="pnlCode" Visibility="Collapsed">
+            <Border CornerRadius="10" Background="#1A22D3B0" HorizontalAlignment="Center" Padding="12,5" Margin="0,0,0,14">
+              <StackPanel Orientation="Horizontal"><Ellipse Width="8" Height="8" Fill="#22D3B0" VerticalAlignment="Center"/><TextBlock x:Name="lblSecStatus" Text="Starting…" Foreground="#8FE9D6" FontSize="12.5" Margin="8,0,0,0"/></StackPanel>
+            </Border>
+            <TextBlock x:Name="lblSecName" Text="" Foreground="#E9EEF6" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,3"/>
+            <TextBlock Text="Enter this code on the main computer" Foreground="#8595AD" FontSize="12.5" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+            <Border CornerRadius="18" Background="{StaticResource GlassFill}" BorderBrush="{StaticResource GlassStroke}" BorderThickness="1" Padding="10,18" Margin="0,0,0,8"><Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="5" Direction="270" Opacity="0.4" Color="#000000"/></Border.Effect>
+              <TextBlock x:Name="lblCode" Text="----·----" Foreground="White" FontSize="40" FontWeight="Bold" FontFamily="Segoe UI" HorizontalAlignment="Center"><TextBlock.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="0" Opacity="0.5" Color="#6EA8FF"/></TextBlock.Effect></TextBlock>
+            </Border>
+            <Button x:Name="btnCopyCode" Style="{StaticResource Ghost}" HorizontalAlignment="Center" Margin="0,6,0,0">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8C8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" VerticalAlignment="Center"/><TextBlock Text="Copy code" Margin="8,0,0,0" VerticalAlignment="Center"/></StackPanel>
+            </Button>
+          </StackPanel>
         </StackPanel>
 
-        <!-- Main: device list + connection state -->
-        <StackPanel x:Name="scPrimary" VerticalAlignment="Center" Visibility="Collapsed">
-          <TextBlock x:Name="lblFound" Text="Searching the network…" Foreground="#8FE9D6" FontSize="12.5" HorizontalAlignment="Center" Margin="0,0,0,14"/>
-          <TextBlock Text="Choose a computer" Foreground="#B9C4D6" FontSize="12.5" Margin="2,0,0,7"/>
-          <ComboBox x:Name="cmbDevices" Style="{StaticResource GlassCombo}" Margin="0,0,0,18"/>
-          <Border CornerRadius="16" Background="{StaticResource GlassFill}" BorderBrush="{StaticResource GlassStroke}" BorderThickness="1" Padding="18,16">
+        <!-- Main: search, device list, connection state -->
+        <StackPanel x:Name="scPrimary" VerticalAlignment="Top" Visibility="Collapsed">
+          <Grid Margin="0,0,0,12">
+            <TextBlock x:Name="lblFound" Text="Choose a computer" Foreground="#E9EEF6" FontSize="15.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <Button x:Name="btnRescan" HorizontalAlignment="Right" VerticalAlignment="Center" Width="34" Height="34" Background="#16FFFFFF" BorderThickness="0" Foreground="#B9C4D6" Cursor="Hand" ToolTip="Search again" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Content="&#xE72C;"/>
+          </Grid>
+
+          <StackPanel x:Name="spSearch" Margin="0,22,0,22">
+            <Grid Width="56" Height="56" HorizontalAlignment="Center">
+              <Ellipse Width="52" Height="52" Stroke="#20FFFFFF" StrokeThickness="3"/>
+              <Ellipse Width="52" Height="52" Stroke="#6EA8FF" StrokeThickness="3" StrokeDashArray="14 40" StrokeDashCap="Round">
+                <Ellipse.RenderTransform><RotateTransform x:Name="spinRot" CenterX="26" CenterY="26"/></Ellipse.RenderTransform>
+                <Ellipse.Triggers>
+                  <EventTrigger RoutedEvent="FrameworkElement.Loaded"><BeginStoryboard><Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="spinRot" Storyboard.TargetProperty="Angle" From="0" To="360" Duration="0:0:1" RepeatBehavior="Forever"/>
+                  </Storyboard></BeginStoryboard></EventTrigger>
+                </Ellipse.Triggers>
+              </Ellipse>
+              <Ellipse Width="9" Height="9" Fill="#22D3B0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+            <TextBlock x:Name="lblSearch" Text="Looking for computers on your network…" Foreground="#9FB0C6" FontSize="13" HorizontalAlignment="Center" Margin="0,16,0,0"/>
+          </StackPanel>
+
+          <ScrollViewer x:Name="svDevices" MaxHeight="196" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+            <StackPanel x:Name="spDevices"/>
+          </ScrollViewer>
+
+          <StackPanel x:Name="spEmpty" Visibility="Collapsed" Margin="0,10,0,4">
+            <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="26" Foreground="#5C6A82" HorizontalAlignment="Center"/>
+            <TextBlock Text="No other computers found" Foreground="#B9C4D6" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,8,0,3"/>
+            <TextBlock Text="Make sure the other computer is on, shows Ready, and is on the same network." Foreground="#8595AD" FontSize="12" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="300"/>
+          </StackPanel>
+
+          <Border x:Name="cardDetail" CornerRadius="16" Background="{StaticResource GlassFill}" BorderBrush="{StaticResource GlassStroke}" BorderThickness="1" Padding="18,16" Margin="0,14,0,0" Visibility="Collapsed">
             <StackPanel>
               <StackPanel x:Name="stConnected" Visibility="Collapsed">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,6"><Border Width="40" Height="40" CornerRadius="20" Background="#1E22D3B0"><TextBlock Text="&#xE73E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="18" Foreground="#22D3B0" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border></StackPanel>
@@ -177,14 +224,15 @@
                 <TextBlock x:Name="lblConnName" Text="Ready to control and test" Foreground="#9FB0C6" FontSize="12.5" HorizontalAlignment="Center" Margin="0,3,0,2"/>
               </StackPanel>
               <StackPanel x:Name="stNeedCode" Visibility="Collapsed">
-                <TextBlock Text="Enter the code shown on the other computer" Foreground="#B9C4D6" FontSize="12.5" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                <TextBlock x:Name="lblNeedName" Text="Enter the code shown on the other computer" Foreground="#B9C4D6" FontSize="12.5" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,12"/>
                 <TextBox x:Name="txtCode" Style="{StaticResource Field}" FontSize="20" FontWeight="SemiBold" HorizontalContentAlignment="Center" Margin="0,0,0,12"/>
                 <Button x:Name="btnConnect" Style="{StaticResource Pill}" Content="Connect"/>
                 <TextBlock x:Name="lblConnErr" Text="" Foreground="#F0A0A0" FontSize="12" HorizontalAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0"/>
               </StackPanel>
             </StackPanel>
           </Border>
-          <TextBlock x:Name="lnkManual" Text="Not listed? Connect by its address" Foreground="#8FA6C6" FontSize="12" Cursor="Hand" HorizontalAlignment="Center" Margin="0,15,0,0"/>
+
+          <TextBlock x:Name="lnkManual" Text="Not listed? Connect by its address" Foreground="#8FA6C6" FontSize="12" Cursor="Hand" HorizontalAlignment="Center" Margin="0,14,0,0"/>
           <StackPanel x:Name="pnlManual" Visibility="Collapsed" Margin="0,12,0,0">
             <TextBlock Text="Address of the other computer (its ipconfig IPv4)" Foreground="#8595AD" FontSize="11.5" Margin="2,0,0,5"/>
             <TextBox x:Name="txtManualIp" Style="{StaticResource Field}" FontSize="14" Margin="0,0,0,10"/>

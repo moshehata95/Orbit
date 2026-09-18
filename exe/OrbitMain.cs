@@ -175,20 +175,25 @@ namespace OrbitApp
         static Window win;
         static string curCode;
         static List<Banner> banners = new List<Banner>();
+        static Banner selectedBanner;
+        static readonly List<Border> deviceCards = new List<Border>();
 
         public static int Run()
         {
             var app = new Application();
             win = (Window)XamlReader.Load(XmlReader.Create(new StringReader(Core.ReadTextResource("orbit.xaml"))));
             try { var fd = Core.ExtractFonts(); win.FontFamily = new FontFamily(new Uri(fd.TrimEnd('\\') + "\\"), "./#Cairo"); } catch { }
+            try { var ico = Path.Combine(Core.HomeDir, "orbit.ico"); if (!File.Exists(ico)) Core.ExtractResource("orbit.ico", ico); win.Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri(ico)); } catch { }
 
             Wire<Button>("btnPrimary", b => b.Click += (s, e) => StartPrimary());
-            Wire<Button>("btnSecondary", b => b.Click += (s, e) => StartSecondary());
+            Wire<Button>("btnSecondary", b => b.Click += (s, e) => BeginSecondary());
+            Wire<Button>("btnSetup", b => b.Click += (s, e) => StartSecondary());
             Wire<Button>("btnBack", b => b.Click += (s, e) => Show("role"));
             Wire<Button>("btnClose", b => b.Click += (s, e) => win.Close());
+            Wire<Button>("btnMinimize", b => b.Click += (s, e) => win.WindowState = WindowState.Minimized);
             Wire<Button>("btnCopyCode", b => b.Click += (s, e) => { try { if (curCode != null) Clipboard.SetText(curCode); } catch { } });
             Wire<Button>("btnConnect", b => b.Click += (s, e) => DoConnect());
-            Wire<ComboBox>("cmbDevices", c => c.SelectionChanged += (s, e) => UpdateCard());
+            Wire<Button>("btnRescan", b => b.Click += (s, e) => StartPrimary());
             Wire<Button>("btnManualConnect", b => b.Click += (s, e) => DoConnectManual());
             var lm = win.FindName("lnkManual") as System.Windows.Controls.TextBlock;
             if (lm != null) lm.MouseLeftButtonUp += (s, e) => { var pm = win.FindName("pnlManual") as UIElement; if (pm != null) pm.Visibility = pm.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible; };
@@ -215,14 +220,27 @@ namespace OrbitApp
         }
 
         // ---- secondary ----
+        static void ShowPanel(string name, bool visible) { var p = win.FindName(name) as UIElement; if (p != null) p.Visibility = visible ? Visibility.Visible : Visibility.Collapsed; }
+
+        // step 1: name this computer first, so the shown name is the one that reaches the main
+        static void BeginSecondary()
+        {
+            Show("secondary");
+            ShowPanel("pnlName", true); ShowPanel("pnlCode", false);
+            var nameBox = F<TextBox>("txtName");
+            if (nameBox != null) { nameBox.Text = Environment.MachineName; nameBox.Focus(); nameBox.SelectAll(); }
+        }
+
+        // step 2: run the elevated setup with that name, then show the code
         static void StartSecondary()
         {
+            var nameBox = F<TextBox>("txtName");
+            var name = nameBox != null && nameBox.Text.Trim().Length > 0 ? nameBox.Text.Trim() : Environment.MachineName;
             curCode = Core.NewCode();
             SetText("lblCode", Core.FormatCode(curCode));
+            SetText("lblSecName", name);
             SetText("lblSecStatus", "Starting setup...");
-            Show("secondary");
-            var nameBox = F<TextBox>("txtName");
-            var name = nameBox != null && nameBox.Text.Length > 0 ? nameBox.Text : Environment.MachineName;
+            ShowPanel("pnlName", false); ShowPanel("pnlCode", true);
             var prog = Path.Combine(Path.GetTempPath(), "orbit-setup-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".log");
             File.WriteAllText(prog, "");
             var exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
@@ -268,8 +286,13 @@ namespace OrbitApp
         static void StartPrimary()
         {
             Show("primary");
-            SetText("lblFound", "Setting up this computer...");
-            var cmb = F<ComboBox>("cmbDevices"); if (cmb != null) cmb.Items.Clear();
+            SetText("lblFound", "Choose a computer");
+            selectedBanner = null;
+            ShowPanel("spSearch", true);
+            ShowPanel("svDevices", false); ShowPanel("spEmpty", false);
+            ShowPanel("cardDetail", false); ShowPanel("pnlManual", false); ShowPanel("lnkManual", false);
+            var host = F<StackPanel>("spDevices"); if (host != null) host.Children.Clear();
+            deviceCards.Clear();
             Task.Run(() =>
             {
                 try { Core.InstallSelf(); } catch { }
@@ -283,39 +306,79 @@ namespace OrbitApp
         static void FillDevices(List<Banner> found)
         {
             banners = found;
-            var cmb = F<ComboBox>("cmbDevices"); cmb.Items.Clear();
-            if (found.Count == 0) { SetText("lblFound", "No other computers found on the network"); return; }
-            SetText("lblFound", "Found " + found.Count + " computer(s) on the network");
-            foreach (var b in found)
+            ShowPanel("spSearch", false);
+            ShowPanel("lnkManual", true);
+            var host = F<StackPanel>("spDevices"); if (host != null) host.Children.Clear();
+            deviceCards.Clear();
+            selectedBanner = null;
+            if (found.Count == 0)
             {
-                bool paired = Core.GetDevice(b.Name) != null;
-                var it = new ComboBoxItem { Tag = b };
-                var sp = new StackPanel { Orientation = Orientation.Horizontal };
-                var col = paired ? Color.FromRgb(0x22, 0xD3, 0xB0) : Color.FromRgb(0xF0, 0xB0, 0x3C);
-                sp.Children.Add(new Ellipse { Width = 9, Height = 9, VerticalAlignment = VerticalAlignment.Center, Fill = new SolidColorBrush(col) });
-                sp.Children.Add(new TextBlock { Text = b.Name, Margin = new Thickness(10, 0, 0, 0), FontSize = 15 });
-                sp.Children.Add(new TextBlock { Text = paired ? "Connected" : "Needs code", FontSize = 11.5, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(col) });
-                it.Content = sp; cmb.Items.Add(it);
+                SetText("lblFound", "No computers found");
+                ShowPanel("svDevices", false); ShowPanel("spEmpty", true); ShowPanel("cardDetail", false);
+                return;
             }
-            cmb.SelectedIndex = 0; UpdateCard();
+            SetText("lblFound", found.Count == 1 ? "1 computer found" : found.Count + " computers found");
+            ShowPanel("spEmpty", false); ShowPanel("svDevices", true);
+            foreach (var b in found) host.Children.Add(BuildDeviceCard(b));
+            if (deviceCards.Count > 0) SelectCard(deviceCards[0]);
+        }
+
+        static Border BuildDeviceCard(Banner b)
+        {
+            bool paired = Core.GetDevice(b.Name) != null;
+            var brush = new SolidColorBrush(paired ? Color.FromRgb(0x22, 0xD3, 0xB0) : Color.FromRgb(0xF0, 0xB0, 0x3C));
+            var card = new Border { Style = (Style)win.FindResource("DeviceCard"), Tag = b };
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var dot = new Ellipse { Width = 10, Height = 10, VerticalAlignment = VerticalAlignment.Center, Fill = brush };
+            Grid.SetColumn(dot, 0);
+            var mid = new StackPanel { Margin = new Thickness(13, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            mid.Children.Add(new TextBlock { Text = b.Name, FontSize = 15, Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)) });
+            mid.Children.Add(new TextBlock { Text = (paired ? "Connected" : "Needs code") + "  ·  " + b.IP, FontSize = 11.5, Margin = new Thickness(0, 1, 0, 0), Foreground = new SolidColorBrush(Color.FromRgb(0x8F, 0xA0, 0xB8)) });
+            Grid.SetColumn(mid, 1);
+            var chev = new TextBlock { Text = paired ? "" : "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = paired ? 15 : 13, Foreground = brush, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(chev, 2);
+            g.Children.Add(dot); g.Children.Add(mid); g.Children.Add(chev);
+            card.Child = g;
+            card.MouseLeftButtonUp += (s, e) => SelectCard(card);
+            deviceCards.Add(card);
+            return card;
+        }
+
+        static void SelectCard(Border card)
+        {
+            if (card == null) return;
+            selectedBanner = (Banner)card.Tag;
+            foreach (var c in deviceCards)
+            {
+                if (c == card) { c.Background = new SolidColorBrush(Color.FromArgb(0x2A, 0x6E, 0xA8, 0xFF)); c.BorderBrush = new SolidColorBrush(Color.FromRgb(0x6E, 0xA8, 0xFF)); }
+                else { c.ClearValue(Border.BackgroundProperty); c.ClearValue(Border.BorderBrushProperty); }
+            }
+            UpdateCard();
+        }
+
+        static void RefreshCards()
+        {
+            var sel = selectedBanner;
+            FillDevices(banners);
+            if (sel != null) { var m = deviceCards.FirstOrDefault(c => ((Banner)c.Tag).IP == sel.IP); if (m != null) SelectCard(m); }
         }
 
         static void UpdateCard()
         {
-            var cmb = F<ComboBox>("cmbDevices"); if (cmb == null || cmb.SelectedItem == null) return;
-            var b = (Banner)((ComboBoxItem)cmb.SelectedItem).Tag;
+            var b = selectedBanner; if (b == null) { ShowPanel("cardDetail", false); return; }
+            ShowPanel("cardDetail", true);
             bool paired = Core.GetDevice(b.Name) != null;
-            var conn = win.FindName("stConnected") as UIElement; var need = win.FindName("stNeedCode") as UIElement;
-            if (conn != null) conn.Visibility = paired ? Visibility.Visible : Visibility.Collapsed;
-            if (need != null) need.Visibility = paired ? Visibility.Collapsed : Visibility.Visible;
+            ShowPanel("stConnected", paired); ShowPanel("stNeedCode", !paired);
             if (paired) SetText("lblConnName", b.Name);
-            else { var tc = F<TextBox>("txtCode"); if (tc != null) tc.Text = ""; }
+            else { SetText("lblNeedName", "Enter the code shown on “" + b.Name + "”"); var tc = F<TextBox>("txtCode"); if (tc != null) tc.Text = ""; SetText("lblConnErr", ""); }
         }
 
         static void DoConnect()
         {
-            var cmb = F<ComboBox>("cmbDevices"); if (cmb == null || cmb.SelectedItem == null) return;
-            var b = (Banner)((ComboBoxItem)cmb.SelectedItem).Tag;
+            var b = selectedBanner; if (b == null) return;
             var tc = F<TextBox>("txtCode");
             var code = new string((tc != null ? tc.Text : "").Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
             if (code.Length != 8) { SetText("lblConnErr", "The code is 8 letters/digits."); return; }
@@ -324,7 +387,7 @@ namespace OrbitApp
             {
                 string err = null;
                 try { Pair(b, code); } catch (Exception ex) { err = ex.Message; }
-                win.Dispatcher.Invoke(() => { if (err == null) { SetText("lblConnErr", ""); UpdateCard(); } else SetText("lblConnErr", "⚠ " + err); });
+                win.Dispatcher.Invoke(() => { if (err == null) { SetText("lblConnErr", ""); RefreshCards(); } else SetText("lblConnErr", "⚠ " + err); });
             });
         }
 
@@ -357,9 +420,8 @@ namespace OrbitApp
                     var found = new List<Banner>(banners);
                     if (!found.Any(x => x.IP == b.IP)) found.Add(b);
                     FillDevices(found);
-                    var cmb = F<ComboBox>("cmbDevices");
-                    if (cmb != null) for (int i = 0; i < cmb.Items.Count; i++) { var it = cmb.Items[i] as ComboBoxItem; if (it != null && ((Banner)it.Tag).IP == b.IP) { cmb.SelectedIndex = i; break; } }
-                    UpdateCard();
+                    var m = deviceCards.FirstOrDefault(c => ((Banner)c.Tag).IP == b.IP);
+                    if (m != null) SelectCard(m);
                     var pm = win.FindName("pnlManual") as UIElement; if (pm != null) pm.Visibility = Visibility.Collapsed;
                 });
             });
@@ -394,7 +456,7 @@ namespace OrbitApp
         {
             var res = MessageBox.Show("Remove remote control from this computer (key, service, firewall)?", "Orbit", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (res != MessageBoxResult.Yes) return;
-            Show("secondary"); SetText("lblCode", "· · · ·"); SetText("lblSecStatus", "Removing...");
+            Show("secondary"); ShowPanel("pnlName", false); ShowPanel("pnlCode", true); SetText("lblSecName", Environment.MachineName); SetText("lblCode", "· · · ·"); SetText("lblSecStatus", "Removing..."); curCode = null;
             var prog = Path.Combine(Path.GetTempPath(), "orbit-remove-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".log");
             File.WriteAllText(prog, "");
             var exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
