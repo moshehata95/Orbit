@@ -123,6 +123,8 @@ Orbit ships as a **plain folder / zip**, not a single self-extracting `.cmd`. Th
 
 On a **secondary**, the screen server (TightVNC) is correctly recognized as a remote-access tool — **allow it** in your AV so the screen channel works. If it's blocked, the SSH command channel still works; only live screen/click does not.
 
+**Downloaded copy won't open?** Windows tags files from the internet ("Mark-of-the-Web"), which silently blocks the scripts. `Run Orbit.cmd` unblocks the folder automatically before launching. If it still won't open, right-click `Orbit.zip` → **Properties** → **Unblock** → OK, then extract again.
+
 ---
 
 ## Requirements

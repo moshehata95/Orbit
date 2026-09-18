@@ -25,9 +25,15 @@ $op = [IO.File]::ReadAllText((Join-Path $dist 'orbit.ps1'), [Text.Encoding]::UTF
 if ($op -match '__PUBKEY__') { throw 'Key injection failed' }
 [IO.File]::WriteAllText((Join-Path $dist 'orbit.ps1'), $op, (New-Object Text.UTF8Encoding $false))
 
-# plain, readable launcher (not flagged as a virus)
-$launcher = "@echo off`r`nrem Orbit remote control`r`ncd /d ""%~dp0""`r`npowershell -NoProfile -ExecutionPolicy Bypass -File ""%~dp0orbit.ps1""`r`n"
-[IO.File]::WriteAllText((Join-Path $dist 'Run Orbit.cmd'), $launcher, (New-Object Text.UTF8Encoding $false))
+# plain, readable launcher (not flagged as a virus). Unblocks the folder first so a
+# downloaded/extracted copy (Mark-of-the-Web) still runs, then launches the UI.
+$launcher = @(
+    '@echo off',
+    'rem Orbit - remote control',
+    'cd /d "%~dp0"',
+    'powershell -NoProfile -ExecutionPolicy Bypass -Sta -Command "Get-ChildItem -LiteralPath ''%~dp0'' -Recurse -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue; & ''%~dp0orbit.ps1''"'
+) -join "`r`n"
+[IO.File]::WriteAllText((Join-Path $dist 'Run Orbit.cmd'), $launcher + "`r`n", (New-Object Text.UTF8Encoding $false))
 
 $zip = Join-Path $root 'Orbit.zip'
 if (Test-Path $zip) { [IO.File]::Delete($zip) }
