@@ -135,17 +135,19 @@ namespace OrbitApp
             }
 
             P("STATUS Setting up the screen channel (computer use)...");
-            InstallVnc(code, state);
+            var effCode = InstallVnc(code, state);
+            P("CODE " + effCode);
 
             SaveState(state);
             P("STATUS Ready - waiting for the main computer");
             P("READY");
         }
 
-        static void InstallVnc(string code, State state)
+        static string InstallVnc(string code, State state)
         {
             var tvn = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "TightVNC", "tvnserver.exe");
-            if (!File.Exists(tvn))
+            var fresh = !File.Exists(tvn);
+            if (fresh)
             {
                 P("LOG - Installing the bundled screen server...");
                 var msi = Path.Combine(Path.GetTempPath(), "orbit-tvnc.msi");
@@ -165,15 +167,18 @@ namespace OrbitApp
                 state.installedVnc = true;
             }
             Sc("config", "tvnserver", "start=", "auto");
-            // Always (re)apply the shown code as the RFB password. The code is new every setup,
-            // but msiexec only sets it on a first install - so on a re-setup the server would keep
-            // the old code and every pairing would read "code doesn't match". Stop first so the
-            // service can't write its old password back over ours.
+            // Keep the code stable across re-runs: reuse a valid existing code so an existing
+            // pairing on the main computer doesn't silently break; only apply the fresh code on a
+            // first-time setup (or if the stored one is unreadable). Write it straight to the
+            // registry, since msiexec only sets the password on a first install.
+            var existing = ReadVncPassword();
+            var effective = (!fresh && IsValidCode(existing)) ? existing : code;
             P("LOG - Applying the screen password...");
             try { using (var sc = new ServiceController("tvnserver")) { if (sc.Status != ServiceControllerStatus.Stopped) { sc.Stop(); sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(15)); } } } catch { }
-            Thread.Sleep(600);
-            try { SetVncPassword(code); } catch (Exception ex) { P("LOG vnc-pw: " + ex.Message); }
+            Thread.Sleep(500);
+            try { SetVncPassword(effective); } catch (Exception ex) { P("LOG vnc-pw: " + ex.Message); }
             try { using (var sc = new ServiceController("tvnserver")) { sc.Start(); sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(20)); } } catch (Exception ex) { P("LOG vnc-start: " + ex.Message); }
+            return effective;
         }
 
         // TightVNC stores the RFB password as an 8-byte single-DES blob of the (null-padded, 8-char)
@@ -208,6 +213,33 @@ namespace OrbitApp
                     k.SetValue("UseVncAuthentication", 1, RegistryValueKind.DWord);
                 }
             }
+        }
+        static string ReadVncPassword()
+        {
+            try
+            {
+                using (var k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\TightVNC\Server"))
+                {
+                    if (k == null) return null;
+                    var blob = k.GetValue("Password") as byte[];
+                    if (blob == null || blob.Length != 8) return null;
+                    var key = ReverseBits(new byte[] { 23, 82, 107, 6, 35, 78, 88, 7 });
+                    using (var des = new DESCryptoServiceProvider { Mode = CipherMode.ECB, Padding = PaddingMode.None, Key = key })
+                    using (var dec = des.CreateDecryptor())
+                    {
+                        var pt = dec.TransformFinalBlock(blob, 0, 8);
+                        int n = 0; while (n < 8 && pt[n] != 0) n++;
+                        return Encoding.ASCII.GetString(pt, 0, n);
+                    }
+                }
+            }
+            catch { return null; }
+        }
+        static bool IsValidCode(string c)
+        {
+            if (string.IsNullOrEmpty(c) || c.Length != 8) return false;
+            foreach (var ch in c) if (!((ch >= 'A' && ch <= 'Z') || (ch >= '2' && ch <= '9'))) return false;
+            return true;
         }
 
         static void RemoveSecondary()

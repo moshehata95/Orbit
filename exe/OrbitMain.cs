@@ -177,6 +177,9 @@ namespace OrbitApp
         static List<Banner> banners = new List<Banner>();
         static Banner selectedBanner;
         static readonly List<Border> deviceCards = new List<Border>();
+        static readonly Dictionary<string, TextBlock> cardStatusText = new Dictionary<string, TextBlock>();
+        static readonly Dictionary<string, Ellipse> cardStatusDot = new Dictionary<string, Ellipse>();
+        enum DevState { Ok, StaleCode, Unreachable }
 
         public static int Run()
         {
@@ -271,6 +274,7 @@ namespace OrbitApp
                         {
                             var line = lines[pos];
                             if (line.StartsWith("STATUS ")) SetText("lblSecStatus", line.Substring(7));
+                            else if (line.StartsWith("CODE ")) { curCode = line.Substring(5).Trim(); SetText("lblCode", Core.FormatCode(curCode)); }
                             else if (line.StartsWith("READY")) { SetText("lblSecStatus", "Ready - waiting for the main computer"); timer.Stop(); }
                             else if (line.StartsWith("FAIL ")) { SetText("lblSecStatus", "⚠ " + line.Substring(5)); timer.Stop(); }
                         }
@@ -292,7 +296,7 @@ namespace OrbitApp
             ShowPanel("svDevices", false); ShowPanel("spEmpty", false);
             ShowPanel("cardDetail", false); ShowPanel("pnlManual", false); ShowPanel("lnkManual", false);
             var host = F<StackPanel>("spDevices"); if (host != null) host.Children.Clear();
-            deviceCards.Clear();
+            deviceCards.Clear(); cardStatusText.Clear(); cardStatusDot.Clear();
             Task.Run(() =>
             {
                 try { Core.InstallSelf(); } catch { }
@@ -320,50 +324,104 @@ namespace OrbitApp
             SetText("lblFound", found.Count == 1 ? "1 computer found" : found.Count + " computers found");
             ShowPanel("spEmpty", false); ShowPanel("svDevices", true);
             foreach (var b in found) host.Children.Add(BuildDeviceCard(b));
-            if (deviceCards.Count > 0) SelectCard(deviceCards[0]);
+            if (deviceCards.Count > 0) { selectedBanner = (Banner)deviceCards[0].Tag; Highlight(deviceCards[0]); UpdateCard(); }
+            VerifyAll();
         }
 
         static Border BuildDeviceCard(Banner b)
         {
             bool paired = Core.GetDevice(b.Name) != null;
-            var brush = new SolidColorBrush(paired ? Color.FromRgb(0x22, 0xD3, 0xB0) : Color.FromRgb(0xF0, 0xB0, 0x3C));
+            var gray = Color.FromRgb(0x8F, 0xA0, 0xB8);
+            var dotColor = paired ? gray : Color.FromRgb(0xF0, 0xB0, 0x3C);
             var card = new Border { Style = (Style)win.FindResource("DeviceCard"), Tag = b };
             var g = new Grid();
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var dot = new Ellipse { Width = 10, Height = 10, VerticalAlignment = VerticalAlignment.Center, Fill = brush };
+            var dot = new Ellipse { Width = 10, Height = 10, VerticalAlignment = VerticalAlignment.Center, Fill = new SolidColorBrush(dotColor) };
             Grid.SetColumn(dot, 0);
             var mid = new StackPanel { Margin = new Thickness(13, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             mid.Children.Add(new TextBlock { Text = b.Name, FontSize = 15, Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)) });
-            mid.Children.Add(new TextBlock { Text = (paired ? "Connected" : "Needs code") + "  ·  " + b.IP, FontSize = 11.5, Margin = new Thickness(0, 1, 0, 0), Foreground = new SolidColorBrush(Color.FromRgb(0x8F, 0xA0, 0xB8)) });
+            var status = new TextBlock { Text = (paired ? "Checking…" : "Needs code") + "  ·  " + b.IP, FontSize = 11.5, Margin = new Thickness(0, 1, 0, 0), Foreground = new SolidColorBrush(gray) };
+            mid.Children.Add(status);
             Grid.SetColumn(mid, 1);
-            var chev = new TextBlock { Text = paired ? "" : "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = paired ? 15 : 13, Foreground = brush, VerticalAlignment = VerticalAlignment.Center };
+            var chev = new TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 12, Foreground = new SolidColorBrush(gray), VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(chev, 2);
             g.Children.Add(dot); g.Children.Add(mid); g.Children.Add(chev);
             card.Child = g;
+            cardStatusText[b.IP] = status; cardStatusDot[b.IP] = dot;
             card.MouseLeftButtonUp += (s, e) => SelectCard(card);
             deviceCards.Add(card);
             return card;
+        }
+
+        static void Highlight(Border card)
+        {
+            foreach (var c in deviceCards)
+            {
+                if (c == card) { c.Background = new SolidColorBrush(Color.FromArgb(0x2A, 0x6E, 0xA8, 0xFF)); c.BorderBrush = new SolidColorBrush(Color.FromRgb(0x6E, 0xA8, 0xFF)); }
+                else { c.ClearValue(Border.BackgroundProperty); c.ClearValue(Border.BorderBrushProperty); }
+            }
         }
 
         static void SelectCard(Border card)
         {
             if (card == null) return;
             selectedBanner = (Banner)card.Tag;
-            foreach (var c in deviceCards)
-            {
-                if (c == card) { c.Background = new SolidColorBrush(Color.FromArgb(0x2A, 0x6E, 0xA8, 0xFF)); c.BorderBrush = new SolidColorBrush(Color.FromRgb(0x6E, 0xA8, 0xFF)); }
-                else { c.ClearValue(Border.BackgroundProperty); c.ClearValue(Border.BorderBrushProperty); }
-            }
+            Highlight(card);
             UpdateCard();
+            VerifyOne(selectedBanner);
         }
 
         static void RefreshCards()
         {
             var sel = selectedBanner;
             FillDevices(banners);
-            if (sel != null) { var m = deviceCards.FirstOrDefault(c => ((Banner)c.Tag).IP == sel.IP); if (m != null) SelectCard(m); }
+            if (sel != null) { var m = deviceCards.FirstOrDefault(c => ((Banner)c.Tag).IP == sel.IP); if (m != null) { selectedBanner = (Banner)m.Tag; Highlight(m); UpdateCard(); } }
+        }
+
+        // devices.json only records that a device was paired once - the code on it can change
+        // (re-set up, reinstalled). Verify the SSH key AND the stored code's screen auth so the
+        // UI shows the TRUE state and can offer to re-enter a code that changed.
+        static DevState VerifyDevice(Device dev)
+        {
+            var ping = Core.DeviceSsh(dev, "echo ok", 8000);
+            if (ping == null || !ping.Out.Contains("ok")) return DevState.Unreachable;
+            var code = Core.Unprotect(dev.code); if (string.IsNullOrEmpty(code)) return DevState.StaleCode;
+            int lp; var t = Core.OpenTunnel(dev, out lp); if (t == null) return DevState.Unreachable;
+            try
+            {
+                var py = Core.PyExe(); if (py == null) return DevState.Ok;
+                var drv = Core.DriverPath; if (!File.Exists(drv)) Core.ExtractResource("orbit-vnc.py", drv);
+                Environment.SetEnvironmentVariable("ORBIT_VNC_PW", code);
+                var r = Core.Run(py, new[] { drv, "probe", "127.0.0.1::" + lp }, 12000);
+                if (r.Code == 5) return DevState.StaleCode;
+                return r.Code == 0 ? DevState.Ok : DevState.Unreachable;
+            }
+            finally { Environment.SetEnvironmentVariable("ORBIT_VNC_PW", null); try { if (!t.HasExited) t.Kill(); } catch { } }
+        }
+
+        static void VerifyOne(Banner bn)
+        {
+            if (bn == null) return;
+            var dev = Core.GetDevice(bn.Name); if (dev == null) return;
+            string ip = bn.IP, nm = bn.Name;
+            Task.Run(() => { var st = VerifyDevice(dev); win.Dispatcher.Invoke(() => ApplyVerified(ip, nm, st)); });
+        }
+
+        static void VerifyAll() { foreach (var card in deviceCards.ToList()) VerifyOne((Banner)card.Tag); }
+
+        static void ApplyVerified(string ip, string name, DevState st)
+        {
+            var dotCol = st == DevState.Ok ? Color.FromRgb(0x22, 0xD3, 0xB0) : st == DevState.StaleCode ? Color.FromRgb(0xF0, 0xB0, 0x3C) : Color.FromRgb(0x8F, 0xA0, 0xB8);
+            var label = st == DevState.Ok ? "Connected" : st == DevState.StaleCode ? "Code changed" : "Offline";
+            Ellipse dot; TextBlock stx;
+            if (cardStatusDot.TryGetValue(ip, out dot) && dot != null) dot.Fill = new SolidColorBrush(dotCol);
+            if (cardStatusText.TryGetValue(ip, out stx) && stx != null) stx.Text = label + "  ·  " + ip;
+            if (selectedBanner == null || selectedBanner.IP != ip) return;
+            if (st == DevState.Ok) { ShowPanel("stConnected", true); ShowPanel("stNeedCode", false); SetText("lblConnName", name + " · ready to control"); }
+            else if (st == DevState.StaleCode) { ShowPanel("stConnected", false); ShowPanel("stNeedCode", true); SetText("lblNeedName", "The code on “" + name + "” changed — enter the new one"); var tc = F<TextBox>("txtCode"); if (tc != null) tc.Text = ""; SetText("lblConnErr", ""); }
+            else { ShowPanel("stConnected", true); ShowPanel("stNeedCode", false); SetText("lblConnName", "⚠ Can't reach " + name + " right now"); }
         }
 
         static void UpdateCard()
@@ -371,9 +429,8 @@ namespace OrbitApp
             var b = selectedBanner; if (b == null) { ShowPanel("cardDetail", false); return; }
             ShowPanel("cardDetail", true);
             bool paired = Core.GetDevice(b.Name) != null;
-            ShowPanel("stConnected", paired); ShowPanel("stNeedCode", !paired);
-            if (paired) SetText("lblConnName", b.Name);
-            else { SetText("lblNeedName", "Enter the code shown on “" + b.Name + "”"); var tc = F<TextBox>("txtCode"); if (tc != null) tc.Text = ""; SetText("lblConnErr", ""); }
+            if (paired) { ShowPanel("stConnected", true); ShowPanel("stNeedCode", false); SetText("lblConnName", "Checking connection…"); }
+            else { ShowPanel("stConnected", false); ShowPanel("stNeedCode", true); SetText("lblNeedName", "Enter the code shown on “" + b.Name + "”"); var tc = F<TextBox>("txtCode"); if (tc != null) tc.Text = ""; SetText("lblConnErr", ""); }
         }
 
         static void DoConnect()
